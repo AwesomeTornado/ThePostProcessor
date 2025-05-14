@@ -1,0 +1,38 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\Nebula\\source\\repos\\ThePostProcessor\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{2BB88C44-7186-4EC1-8B58-81B3554F6B1E}|ThePostProcessor.csproj|c:\\users\\nebula\\source\\repos\\thepostprocessor\\thepostprocessor.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2BB88C44-7186-4EC1-8B58-81B3554F6B1E}|ThePostProcessor.csproj|solutionrelative:thepostprocessor.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "ThePostProcessor.cs",
+              "DocumentMoniker": "C:\\Users\\Nebula\\source\\repos\\ThePostProcessor\\ThePostProcessor.cs",
+              "RelativeDocumentMoniker": "ThePostProcessor.cs",
+              "ToolTip": "C:\\Users\\Nebula\\source\\repos\\ThePostProcessor\\ThePostProcessor.cs",
+              "RelativeToolTip": "ThePostProcessor.cs",
+              "ViewState": "AQIAAAgAAAAAAAAAAAAqwBIAAAA5AAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "OverriddenGroupName": "",
+              "WhenOpened": "2024-09-25T14:24:21.78Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
