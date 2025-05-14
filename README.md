@@ -1,8 +1,10 @@
 # ThePostProcessor
 
 A [ResoniteModLoader](https://github.com/resonite-modding-group/ResoniteModLoader) mod for [Resonite](https://resonite.com/) that does something.
-<!-- Edit to describe what your mod does and what it may solve -->
-<!-- If your mod solves an issue, you should link to any relevant issues on the resonite github -->
+Advanced Rendering settings mod for Resonite!
+The Post Processor adds Advanced Rendering settings to Resonite!. Such as MSAA and HDR ColorGrading and Forward Rendering
+
+--TODO-- add info about all the settings in the mod
 
 ## Installation
 1. Install [ResoniteModLoader](https://github.com/resonite-modding-group/ResoniteModLoader).
