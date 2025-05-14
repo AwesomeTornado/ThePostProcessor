@@ -20,7 +20,8 @@ namespace ThePostProcessor
         public override string Name => "ThePostProcessor";
         public override string Author => "NepuShiro,Cloud_Jumper";
         public override string Version => VERSION_CONSTANT;
-        public override string Link => "https://github.com/NepuShiro/ThePostProcessor/";
+        public override string Link => "https://github.com/0xFLOATINGPOINT/ThePostProcessor/";
+# add LICENSE to code?
 
         [AutoRegisterConfigKey]
         private static readonly ModConfigurationKey<dummy> PERMS_DUMMY = new("perms_dummy", "--------------------- Anti-Aliasing ---------------------");
