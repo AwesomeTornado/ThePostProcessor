@@ -73,6 +73,14 @@ namespace ThePostProcessor
             }
         }
 
+        private static bool ModEnabled
+        {
+            get
+            {
+                return config.GetValue(ENABLED);
+            }
+        }
+
         public override void OnEngineInit()
         {
             config = GetConfiguration();
@@ -80,121 +88,108 @@ namespace ThePostProcessor
 
             ENABLED.OnChanged += (enabled) =>
             {
-                var renderValue = config.GetValue(ENABLED) ? config.GetValue(renderPath) : RenderingPath.UsePlayerSettings;
-                var msaaValue = config.GetValue(ENABLED) ? (int)config.GetValue(antiAliasing) : (int)AntiAliasing.None;
-                var hdrValue = config.GetValue(ENABLED) ? config.GetValue(hdr) : true;
+                var renderValue = ModEnabled ? config.GetValue(renderPath) : RenderingPath.UsePlayerSettings;
+                var msaaValue = ModEnabled ? (int)config.GetValue(antiAliasing) : (int)AntiAliasing.None;
+                var hdrValue = ModEnabled ? config.GetValue(hdr) : true;
 
-                    ForAllMainCameras((camera) =>
-                    {
-                        camera.renderingPath = renderValue;
-                        if (config.GetValue(ENABLED)) Msg($"Camera: {camera.name}, RenderPath: {camera.renderingPath}");
-                        camera.allowHDR = hdrValue;
-                        if (config.GetValue(ENABLED)) Msg($"Camera: {camera.name}, HDR: {camera.allowHDR}");
-                    });
-                    QualitySettings.antiAliasing = msaaValue;
-                    if (config.GetValue(ENABLED)) Msg($"Set MSAA Level {msaaValue}x");
+                ForAllMainCameras((camera) =>
+                {
+                    camera.renderingPath = renderValue;
+                    if (ModEnabled) Msg($"Camera: {camera.name}, RenderPath: {camera.renderingPath}");
+                    camera.allowHDR = hdrValue;
+                    if (ModEnabled) Msg($"Camera: {camera.name}, HDR: {camera.allowHDR}");
+                });
+                QualitySettings.antiAliasing = msaaValue;
+                if (ModEnabled) Msg($"Set MSAA Level {msaaValue}x");
             };
 
-            
-
-
-            config.OnThisConfigurationChanged += (k) =>
+            renderPath.OnChanged += (path) =>
             {
-                if (k.Key == ENABLED)
+                if (ModEnabled is false) return;
+                ForAllMainCameras((camera) =>
                 {
-                    Msg("enabled key changed, are any settings changing?");
+                    camera.renderingPath = (RenderingPath)path;
+                    Msg($"Camera: {camera.name}, RenderPath: {camera.renderingPath}");
+                });
+            };
+
+            antiAliasing.OnChanged += (msaaValue) =>
+            {
+                if (ModEnabled is false) return;
+                QualitySettings.antiAliasing = (int)msaaValue;
+                Msg($"Set MSAA Level {msaaValue}x");
+            };
+
+            hdr.OnChanged += (hdrValue) =>
+            {
+                if (ModEnabled is false) return;
+                ForAllMainCameras((camera) =>
+                {
+                    camera.allowHDR = (bool)hdrValue;
+                    Msg($"Camera: {camera.name}, HDR: {camera.allowHDR}");
+                });
+            };
+
+            LutEnabled.OnChanged += (LutEnabled) =>
+            {
+                if ((bool)LutEnabled) return;
+                UpdateLut(null, true);
+            };
+
+            ModConfigurationKey.OnChangedHandler updateLuts = (input) =>
+            {
+                if (config.GetValue(LutEnabled) && config.GetValue(useURLlut))
+                {
+                    UpdateLut();
                 }
-
-                var renderValue = config.GetValue(ENABLED) ? config.GetValue(renderPath) : RenderingPath.UsePlayerSettings;
-                var msaaValue = config.GetValue(ENABLED) ? (int)config.GetValue(antiAliasing) : (int)AntiAliasing.None;
-                var hdrValue = config.GetValue(ENABLED) ? config.GetValue(hdr) : true;
-
-                if (k.Key == renderPath)
+                if (config.GetValue(LutEnabled) && !config.GetValue(useURLlut))
                 {
-                    ForAllMainCameras((camera) =>
+                    UpdateLut(null, true);
+                }
+            };
+
+            useURLlut.OnChanged += updateLuts;
+            LutURI.OnChanged += updateLuts;
+
+            toolShelfLut.OnChanged += (toolShelf) =>
+            {
+                Slot userRoot = Engine.Current.WorldManager.FocusedWorld.LocalUser.Root?.Slot;
+                if (userRoot is null) return;
+
+                List<AvatarRoot> list = Pool.BorrowList<AvatarRoot>();
+                userRoot.GetFirstDirectComponentsInChildren(list);
+                Slot avatarRoot = list.FirstOrDefault()?.Slot;
+                Pool.Return(ref list);
+
+                List<Slot> contentSlots = new();
+                avatarRoot.ForeachComponentInChildren<ItemShelf>((shelf) =>
+                {
+                    contentSlots.Add(shelf.ContentSlot);
+                });
+
+                if ((bool)toolShelf)
+                {
+                    foreach (var slot in contentSlots)
                     {
-                        camera.renderingPath = renderValue;
-                        if (config.GetValue(ENABLED)) Msg($"Camera: {camera.name}, RenderPath: {camera.renderingPath}");
-                    });
-                }
-
-                if (k.Key == antiAliasing)
-                {
-                    QualitySettings.antiAliasing = msaaValue;
-                    if (config.GetValue(ENABLED)) Msg($"Set MSAA Level {msaaValue}x");
-                }
-
-                if (k.Key == hdr)
-                {
-                    ForAllMainCameras((camera) =>
-                    {
-                        camera.allowHDR = hdrValue;
-                        if (config.GetValue(ENABLED)) Msg($"Camera: {camera.name}, HDR: {camera.allowHDR}");
-                    });
-                }
-
-                if (k.Key == LutEnabled)
-                {
-                    if (!config.GetValue(LutEnabled))
-                    {
-                        UpdateLut(null, true);
+                        slot.ChildAdded += OnChildAdded;
+                        slot.ChildRemoved += OnChildRemove;
                     }
                 }
-
-                if (k.Key == useURLlut || k.Key == LutURI)
+                else
                 {
-                    if (config.GetValue(LutEnabled) && config.GetValue(useURLlut))
+                    foreach (var slot in contentSlots)
                     {
-                        UpdateLut();
-                    }
-                    if (config.GetValue(LutEnabled) && !config.GetValue(useURLlut))
-                    {
-                        UpdateLut(null, true);
+                        slot.ChildAdded -= OnChildAdded;
+                        slot.ChildRemoved -= OnChildRemove;
                     }
                 }
-
-                if (k.Key == toolShelfLut)
-                {
-                    Slot userRoot = Engine.Current.WorldManager.FocusedWorld.LocalUser.Root?.Slot;
-                    if (userRoot is null) return;
-
-                    List<AvatarRoot> list = Pool.BorrowList<AvatarRoot>();
-                    userRoot.GetFirstDirectComponentsInChildren(list);
-                    Slot avatarRoot = list.FirstOrDefault()?.Slot;
-                    Pool.Return(ref list);
-
-                    List<Slot> contentSlots = new();
-                    avatarRoot.ForeachComponentInChildren<ItemShelf>((shelf) =>
-                    {
-                        contentSlots.Add(shelf.ContentSlot);
-                    });
-
-                    if (config.GetValue(toolShelfLut))
-                    {
-                        foreach (var slot in contentSlots)
-                        {
-                            slot.ChildAdded += OnChildAdded;
-                            slot.ChildRemoved += OnChildRemove;
-                        }
-                    }
-                    else if (!config.GetValue(toolShelfLut))
-                    {
-                        foreach (var slot in contentSlots)
-                        {
-                            slot.ChildAdded -= OnChildAdded;
-                            slot.ChildRemoved -= OnChildRemove;
-                        }
-                    }
-                }
-                Userspace.UserspaceWorld.EndUndoBatch();
-                //if (w is not null) w.GetUndoStep();
             };
 
             Engine.Current.OnReady += () =>
             {
                 UpdateLut(null, true);
             };
-            
+
         }
 
         private static async void UpdateLut(StaticTexture3D icon = null, bool removing = false)
