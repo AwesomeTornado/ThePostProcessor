@@ -1,6 +1,7 @@
 using Elements.Core;
 using FrooxEngine;
 using FrooxEngine.CommonAvatar;
+using FrooxEngine.Undo;
 using ResoniteModLoader;
 using System;
 using System.Collections.Generic;
@@ -21,7 +22,7 @@ namespace ThePostProcessor
         public override string Author => "NepuShiro,Cloud_Jumper";
         public override string Version => VERSION_CONSTANT;
         public override string Link => "https://github.com/0xFLOATINGPOINT/ThePostProcessor/";
-# add LICENSE to code?
+//# add LICENSE to code?
 
         [AutoRegisterConfigKey]
         private static readonly ModConfigurationKey<dummy> PERMS_DUMMY = new("perms_dummy", "--------------------- Anti-Aliasing ---------------------");
@@ -76,13 +77,13 @@ namespace ThePostProcessor
         {
             config = GetConfiguration();
             config.Save(true);
-
+            
             config.OnThisConfigurationChanged += (k) =>
             {
                 var renderValue = config.GetValue(ENABLED) ? config.GetValue(renderPath) : RenderingPath.UsePlayerSettings;
                 var msaaValue = config.GetValue(ENABLED) ? (int)config.GetValue(antiAliasing) : (int)AntiAliasing.None;
                 var hdrValue = config.GetValue(ENABLED) ? config.GetValue(hdr) : true;
-                //TODO: this should be changed to a switch case eventually.
+
                 if (k.Key == renderPath)
                 {
                     ForAllMainCameras((camera) =>
@@ -166,6 +167,7 @@ namespace ThePostProcessor
             {
                 UpdateLut(null, true);
             };
+            Userspace.UserspaceWorld.EndUndoBatch();
         }
 
         private static async void UpdateLut(StaticTexture3D icon = null, bool removing = false)
