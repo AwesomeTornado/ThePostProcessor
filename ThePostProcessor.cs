@@ -32,7 +32,7 @@ namespace ThePostProcessor
         [AutoRegisterConfigKey]
         private static readonly ModConfigurationKey<dummy> PERMS_DUMMY2 = new("perms_dummy2", "--------------------- Color Grading ---------------------");
         [AutoRegisterConfigKey]
-        private static ModConfigurationKey<bool> useURLlut = new ModConfigurationKey<bool>("Use Color Grading Asset URI", "Uses Color Grading Asset URI as the target for Color Grading", () => false);
+        private static ModConfigurationKey<bool> useURLlut = new ModConfigurationKey<bool>("Use Color Grading Asset URI", "Uses Color Grading Asset URI as the target for Color Grading", () => false);//funky setting?
         [AutoRegisterConfigKey]
         private static ModConfigurationKey<Uri> LutURI = new ModConfigurationKey<Uri>("Color Grading Asset URI", "The URI used for loading the Color Grading Asset Asset. typically this is on resdb:///", () => new("resdb:///35c1d6249ee3b063e38c7e3ea4f506fe9bad7265f7505a1f947a80fd9558496a.3dtex"));
         [AutoRegisterConfigKey]
@@ -43,6 +43,8 @@ namespace ThePostProcessor
         private static readonly ModConfigurationKey<dummy> PERMS_DUMMY3 = new("perms_dummy3", "--------------------- Misc ---------------------");
         [AutoRegisterConfigKey]
         private static ModConfigurationKey<bool> ENABLED = new ModConfigurationKey<bool>("Mod Enabled", "", () => true);
+        [AutoRegisterConfigKey]
+        private static ModConfigurationKey<bool> EnableOverlayCamera = new ModConfigurationKey<bool>("EnableOverlayCamera", "", () => false);
         [AutoRegisterConfigKey]
         private static ModConfigurationKey<bool> LutEnabled = new ModConfigurationKey<bool>("Color Grading Enabled", "", () => false);
         [AutoRegisterConfigKey]
@@ -68,6 +70,17 @@ namespace ThePostProcessor
             foreach (var camera in UnityEngine.Object.FindObjectsOfType<UnityEngine.Camera>())
             {
                 if (camera.gameObject.tag == "MainCamera")
+                {
+                    actions(camera);
+                }
+            }
+        }
+
+        private static void ForOverlayCameras(Action<UnityEngine.Camera> actions)
+        {
+            foreach (var camera in UnityEngine.Object.FindObjectsOfType<UnityEngine.Camera>())
+            {
+                if (camera.gameObject.name == "OverlayCamera")
                 {
                     actions(camera);
                 }
@@ -134,46 +147,46 @@ namespace ThePostProcessor
             };
             ModConfigurationKey.OnChangedHandler updateLuts = (input) =>//this one is weird and needs to be pressed a bunch to reset.
             {
-                if (config.GetValue(LutEnabled) && config.GetValue(useURLlut))
+                if (!config.GetValue(LutEnabled)) return;
+                if (config.GetValue(useURLlut))
                 {
                     UpdateLut();
                 }
-                if (config.GetValue(LutEnabled) && !config.GetValue(useURLlut))
+                else
                 {
                     UpdateLut(null, true);
                 }
             };
+            ModConfigurationKey.OnChangedHandler updateOverylayCamera = (EnableOverlayCamera) =>
+            {
+
+            };
             ModConfigurationKey.OnChangedHandler updateToolshelf = (toolShelf) =>
             {
-                Slot userRoot = Engine.Current.WorldManager.FocusedWorld.LocalUser.Root?.Slot;
-                if (userRoot is null) return;
+                Slot userRoot = Engine.Current.WorldManager.FocusedWorld.LocalUser.Root.Slot;//removed nullable, add back in if getting null ref errors.
+                //if (userRoot is null) return;//the above type is not nullable, consider removing the null check.
 
                 List<AvatarRoot> list = Pool.BorrowList<AvatarRoot>();
                 userRoot.GetFirstDirectComponentsInChildren(list);
-                Slot avatarRoot = list.FirstOrDefault()?.Slot;
+                Slot avatarRoot = list.FirstOrDefault().Slot;
                 Pool.Return(ref list);
 
-                List<Slot> contentSlots = new();
-                avatarRoot.ForeachComponentInChildren<ItemShelf>((shelf) =>
-                {
-                    contentSlots.Add(shelf.ContentSlot);
-                });
 
                 if ((bool)toolShelf)
                 {
-                    foreach (var slot in contentSlots)
+                    avatarRoot.ForeachComponentInChildren<ItemShelf>((shelf) =>
                     {
-                        slot.ChildAdded += OnChildAdded;
-                        slot.ChildRemoved += OnChildRemove;
-                    }
+                        shelf.ContentSlot.ChildAdded += OnChildAdded;
+                        shelf.ContentSlot.ChildRemoved += OnChildRemove;
+                    });
                 }
                 else
                 {
-                    foreach (var slot in contentSlots)
+                    avatarRoot.ForeachComponentInChildren<ItemShelf>((shelf) =>
                     {
-                        slot.ChildAdded -= OnChildAdded;
-                        slot.ChildRemoved -= OnChildRemove;
-                    }
+                        shelf.ContentSlot.ChildAdded -= OnChildAdded;
+                        shelf.ContentSlot.ChildRemoved -= OnChildRemove;
+                    });
                 }
             };
 
@@ -182,22 +195,23 @@ namespace ThePostProcessor
             renderPath.OnChanged += updateRenderPath;
             antiAliasing.OnChanged += updateMsaaValue;
             LutEnabled.OnChanged += updateLutEnabled;
-            useURLlut.OnChanged += updateLuts;
+            useURLlut.OnChanged += updateLuts;//funky setting
             LutURI.OnChanged += updateLuts;
             toolShelfLut.OnChanged += updateToolshelf;
 
-           Engine.Current.OnReady += () =>
-            {
-                UpdateLut(null, true);
-                updateEnabled.Invoke(config.GetValue(ENABLED));
-                updateHdrValue.Invoke(config.GetValue(hdr));
-                updateRenderPath.Invoke(config.GetValue(renderPath));
-                updateMsaaValue.Invoke(config.GetValue(antiAliasing));
-                updateLutEnabled.Invoke(config.GetValue(LutEnabled));
-                updateLuts.Invoke(null);
-                //toolshelf caused a null reference exception
-                //updateToolshelf.Invoke(config.GetValue(toolShelfLut));
-            };
+            Engine.Current.OnReady += () =>
+             {
+                 UpdateLut(null, true);
+                 updateEnabled.Invoke(config.GetValue(ENABLED));
+                 //the functions below are already updated by the enabled handling code.
+                 //updateHdrValue.Invoke(config.GetValue(hdr));
+                 //updateRenderPath.Invoke(config.GetValue(renderPath));
+                 //updateMsaaValue.Invoke(config.GetValue(antiAliasing));
+                 updateLutEnabled.Invoke(config.GetValue(LutEnabled));
+                 updateLuts.Invoke(null);
+                 //toolshelf caused a null reference exception
+                 //updateToolshelf.Invoke(config.GetValue(toolShelfLut));
+             };
 
         }
 
@@ -206,7 +220,7 @@ namespace ThePostProcessor
             if (config.GetValue(LutEnabled) is not true) return;
 
             Slot userspace = Userspace.UserspaceWorld.RootSlot;
-            if (userspace is null) return;
+            //if (userspace is null) return; //the above variable is not nullable, consider removing the null check.
 
             try
             {
@@ -217,24 +231,18 @@ namespace ThePostProcessor
 
                     if (icon == null)
                     {
+                        Msg("Setting var: Mat");
                         var mat = lutSlot.GetComponentOrAttach<VolumeUnlitMaterial>();
                         icon = lutSlot.GetComponentOrAttach<StaticTexture3D>();
                         mat.Volume.Target = icon;
                         icon.URL.Value = config.GetValue(LutURI);
-                        icon.PreferredProfile.Value = null;
-                        icon.PreferredProfile.Value = config.GetValue(HDRLut) ? ColorProfile.Linear : ColorProfile.sRGB;
-                        icon.Uncompressed.Value = true;
-                        icon.DirectLoad.Value = true;
-                        icon.Readable.Value = true;
                     }
-                    else if (icon != null)
-                    {
-                        icon.PreferredProfile.Value = null;
-                        icon.PreferredProfile.Value = config.GetValue(HDRLut) ? ColorProfile.Linear : ColorProfile.sRGB;
-                        icon.Uncompressed.Value = true;
-                        icon.DirectLoad.Value = true;
-                        icon.Readable.Value = true;
-                    }
+
+                    icon.PreferredProfile.Value = null;
+                    icon.PreferredProfile.Value = config.GetValue(HDRLut) ? ColorProfile.Linear : ColorProfile.sRGB;
+                    icon.Uncompressed.Value = true;
+                    icon.DirectLoad.Value = true;
+                    icon.Readable.Value = true;
 
                     using var cts = new CancellationTokenSource();
                     await Task.Run(() =>
@@ -268,7 +276,7 @@ namespace ThePostProcessor
                         apple.gradingMode.overrideState = !removing;
                         apple.externalLut.overrideState = !removing;
 
-                        if (!removing)
+                        if (!removing)//this could be valueconditionals
                         {
                             apple.gradingMode.value = GradingMode.External;
                             apple.externalLut.value = icon.RawAsset.GetUnity();
@@ -288,8 +296,8 @@ namespace ThePostProcessor
             }
             catch (Exception e)
             {
-                Msg(e);//is this try catch needed? What is throwing errors? - Choco
-                Msg("Exception thrown in UpdateLut");
+                Error(e);//is this try catch needed? What is throwing errors? - Choco
+                Error("Exception thrown in UpdateLut");
             }
         }
 
@@ -306,8 +314,8 @@ namespace ThePostProcessor
             }
             catch (Exception e)
             {
-                Msg(e);
-                Msg("Exception thrown in OnChildAdded");
+                Error(e);
+                Error("Exception thrown in OnChildAdded");
             }
         }
 
@@ -324,8 +332,8 @@ namespace ThePostProcessor
             }
             catch (Exception e)
             {
-                Msg(e);
-                Msg("Exception thrown in OnChildRemove");
+                Error(e);
+                Error("Exception thrown in OnChildRemove");
             }
         }
     }
