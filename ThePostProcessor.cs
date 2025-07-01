@@ -19,10 +19,10 @@ namespace ThePostProcessor
     {
         internal const string VERSION_CONSTANT = "1.3.4.0";
         public override string Name => "ThePostProcessor";
-        public override string Author => "NepuShiro,Cloud_Jumper";
+        public override string Author => "NepuShiro, Cloud_Jumper, __Choco__";
         public override string Version => VERSION_CONSTANT;
         public override string Link => "https://github.com/0xFLOATINGPOINT/ThePostProcessor/";
-//# add LICENSE to code?
+        //# add LICENSE to code?
 
         [AutoRegisterConfigKey]
         private static readonly ModConfigurationKey<dummy> PERMS_DUMMY = new("perms_dummy", "--------------------- Anti-Aliasing ---------------------");
@@ -77,9 +77,34 @@ namespace ThePostProcessor
         {
             config = GetConfiguration();
             config.Save(true);
+
+            ENABLED.OnChanged += (enabled) =>
+            {
+                var renderValue = config.GetValue(ENABLED) ? config.GetValue(renderPath) : RenderingPath.UsePlayerSettings;
+                var msaaValue = config.GetValue(ENABLED) ? (int)config.GetValue(antiAliasing) : (int)AntiAliasing.None;
+                var hdrValue = config.GetValue(ENABLED) ? config.GetValue(hdr) : true;
+
+                    ForAllMainCameras((camera) =>
+                    {
+                        camera.renderingPath = renderValue;
+                        if (config.GetValue(ENABLED)) Msg($"Camera: {camera.name}, RenderPath: {camera.renderingPath}");
+                        camera.allowHDR = hdrValue;
+                        if (config.GetValue(ENABLED)) Msg($"Camera: {camera.name}, HDR: {camera.allowHDR}");
+                    });
+                    QualitySettings.antiAliasing = msaaValue;
+                    if (config.GetValue(ENABLED)) Msg($"Set MSAA Level {msaaValue}x");
+            };
+
             
+
+
             config.OnThisConfigurationChanged += (k) =>
             {
+                if (k.Key == ENABLED)
+                {
+                    Msg("enabled key changed, are any settings changing?");
+                }
+
                 var renderValue = config.GetValue(ENABLED) ? config.GetValue(renderPath) : RenderingPath.UsePlayerSettings;
                 var msaaValue = config.GetValue(ENABLED) ? (int)config.GetValue(antiAliasing) : (int)AntiAliasing.None;
                 var hdrValue = config.GetValue(ENABLED) ? config.GetValue(hdr) : true;
@@ -161,13 +186,15 @@ namespace ThePostProcessor
                         }
                     }
                 }
+                Userspace.UserspaceWorld.EndUndoBatch();
+                //if (w is not null) w.GetUndoStep();
             };
 
             Engine.Current.OnReady += () =>
             {
                 UpdateLut(null, true);
             };
-            Userspace.UserspaceWorld.EndUndoBatch();
+            
         }
 
         private static async void UpdateLut(StaticTexture3D icon = null, bool removing = false)
