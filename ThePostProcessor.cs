@@ -9,7 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Rendering.PostProcessing;
-using UnityFrooxEngineRunner; 
+using UnityFrooxEngineRunner;
 using static UnityFrooxEngineRunner.Helper;
 
 namespace ThePostProcessor
@@ -61,6 +61,17 @@ namespace ThePostProcessor
             EightX = 8
         }
 
+        private static void ForAllMainCameras(Action<UnityEngine.Camera> actions)
+        {
+            foreach (var camera in UnityEngine.Object.FindObjectsOfType<UnityEngine.Camera>())
+            {
+                if (camera.gameObject.tag == "MainCamera")
+                {
+                    actions(camera);
+                }
+            }
+        }
+
         public override void OnEngineInit()
         {
             config = GetConfiguration();
@@ -71,17 +82,14 @@ namespace ThePostProcessor
                 var renderValue = config.GetValue(ENABLED) ? config.GetValue(renderPath) : RenderingPath.UsePlayerSettings;
                 var msaaValue = config.GetValue(ENABLED) ? (int)config.GetValue(antiAliasing) : (int)AntiAliasing.None;
                 var hdrValue = config.GetValue(ENABLED) ? config.GetValue(hdr) : true;
-
+                //TODO: this should be changed to a switch case eventually.
                 if (k.Key == renderPath)
                 {
-                    foreach (var camera in UnityEngine.Object.FindObjectsOfType<UnityEngine.Camera>())
+                    ForAllMainCameras((camera) =>
                     {
-                        if (camera.gameObject.tag == "MainCamera")
-                        {
-                            camera.renderingPath = renderValue;
-                            if (config.GetValue(ENABLED)) Msg($"Camera: {camera.name}, RenderPath: {camera.renderingPath}");
-                        }
-                    }
+                        camera.renderingPath = renderValue;
+                        if (config.GetValue(ENABLED)) Msg($"Camera: {camera.name}, RenderPath: {camera.renderingPath}");
+                    });
                 }
 
                 if (k.Key == antiAliasing)
@@ -92,14 +100,11 @@ namespace ThePostProcessor
 
                 if (k.Key == hdr)
                 {
-                    foreach (var camera in UnityEngine.Object.FindObjectsOfType<UnityEngine.Camera>())
+                    ForAllMainCameras((camera) =>
                     {
-                        if (camera.gameObject.tag == "MainCamera")
-                        {
-                            camera.allowHDR = hdrValue;
-                            if (config.GetValue(ENABLED)) Msg($"Camera: {camera.name}, HDR: {camera.allowHDR}");
-                        }
-                    }
+                        camera.allowHDR = hdrValue;
+                        if (config.GetValue(ENABLED)) Msg($"Camera: {camera.name}, HDR: {camera.allowHDR}");
+                    });
                 }
 
                 if (k.Key == LutEnabled)
@@ -125,34 +130,33 @@ namespace ThePostProcessor
                 if (k.Key == toolShelfLut)
                 {
                     Slot userRoot = Engine.Current.WorldManager.FocusedWorld.LocalUser.Root?.Slot;
-                    if (userRoot != null)
+                    if (userRoot is null) return;
+
+                    List<AvatarRoot> list = Pool.BorrowList<AvatarRoot>();
+                    userRoot.GetFirstDirectComponentsInChildren(list);
+                    Slot avatarRoot = list.FirstOrDefault()?.Slot;
+                    Pool.Return(ref list);
+
+                    List<Slot> contentSlots = new();
+                    avatarRoot.ForeachComponentInChildren<ItemShelf>((shelf) =>
                     {
-                        List<AvatarRoot> list = Pool.BorrowList<AvatarRoot>();
-                        userRoot.GetFirstDirectComponentsInChildren(list);
-                        Slot avatarRoot = list.FirstOrDefault()?.Slot;
-                        Pool.Return(ref list);
+                        contentSlots.Add(shelf.ContentSlot);
+                    });
 
-                        List<Slot> contentSlots = new();
-                        avatarRoot.ForeachComponentInChildren<ItemShelf>((shelf) =>
+                    if (config.GetValue(toolShelfLut))
+                    {
+                        foreach (var slot in contentSlots)
                         {
-                            contentSlots.Add(shelf.ContentSlot);
-                        });
-
-                        if (config.GetValue(toolShelfLut))
-                        {
-                            foreach (var slot in contentSlots)
-                            {
-                                slot.ChildAdded += OnChildAdded;
-                                slot.ChildRemoved += OnChildRemove;
-                            }
+                            slot.ChildAdded += OnChildAdded;
+                            slot.ChildRemoved += OnChildRemove;
                         }
-                        else if (!config.GetValue(toolShelfLut))
+                    }
+                    else if (!config.GetValue(toolShelfLut))
+                    {
+                        foreach (var slot in contentSlots)
                         {
-                            foreach (var slot in contentSlots)
-                            {
-                                slot.ChildAdded -= OnChildAdded;
-                                slot.ChildRemoved -= OnChildRemove;
-                            }
+                            slot.ChildAdded -= OnChildAdded;
+                            slot.ChildRemoved -= OnChildRemove;
                         }
                     }
                 }
@@ -166,99 +170,93 @@ namespace ThePostProcessor
 
         private static async void UpdateLut(StaticTexture3D icon = null, bool removing = false)
         {
+            if (config.GetValue(LutEnabled) is not true) return;
+
+            Slot userspace = Userspace.UserspaceWorld.RootSlot;
+            if (userspace is null) return;
+
             try
             {
-                if (config.GetValue(LutEnabled))
+                if (!removing)
                 {
-                    var userspace = Userspace.UserspaceWorld.RootSlot;
-                    if (userspace != null)
+                    var lutSlot = userspace.FindChildOrAdd("LUTHolder");
+                    lutSlot.PersistentSelf = false;
+
+                    if (icon == null)
                     {
+                        var mat = lutSlot.GetComponentOrAttach<VolumeUnlitMaterial>();
+                        icon = lutSlot.GetComponentOrAttach<StaticTexture3D>();
+                        mat.Volume.Target = icon;
+                        icon.URL.Value = config.GetValue(LutURI);
+                        icon.PreferredProfile.Value = null;
+                        icon.PreferredProfile.Value = config.GetValue(HDRLut) ? ColorProfile.Linear : ColorProfile.sRGB;
+                        icon.Uncompressed.Value = true;
+                        icon.DirectLoad.Value = true;
+                        icon.Readable.Value = true;
+                    }
+                    else if (icon != null)
+                    {
+                        icon.PreferredProfile.Value = null;
+                        icon.PreferredProfile.Value = config.GetValue(HDRLut) ? ColorProfile.Linear : ColorProfile.sRGB;
+                        icon.Uncompressed.Value = true;
+                        icon.DirectLoad.Value = true;
+                        icon.Readable.Value = true;
+                    }
+
+                    using var cts = new CancellationTokenSource();
+                    await Task.Run(() =>
+                    {
+                        var now = DateTime.Now;
+                        do
+                        {
+                            if (DateTime.Now - now >= TimeSpan.FromSeconds(10))
+                            {
+                                Msg("Timeout reached");
+                                cts.Cancel();
+                                return;
+                            }
+                        }
+                        while (icon.RawAsset == null || icon.RawAsset.Format == Elements.Assets.TextureFormat.Unknown);
+                    }, cts.Token);
+
+                    if (cts.IsCancellationRequested) return;
+                }
+                ForAllMainCameras((camera) =>
+                {
+                    Msg($"Running stuff on {camera.name}");
+                    foreach (var pp in camera.GetComponents<PostProcessLayer>())
+                    {
+                        if (!pp.defaultProfile.TryGetSettings<ColorGrading>(out var apple))
+                        {
+                            Msg($"PP Colorgrading not found adding");
+                            apple = pp.defaultProfile.AddSettings<ColorGrading>();
+                        }
+
+                        apple.gradingMode.overrideState = !removing;
+                        apple.externalLut.overrideState = !removing;
+
                         if (!removing)
                         {
-                            var lutSlot = userspace.FindChildOrAdd("LUTHolder");
-                            lutSlot.PersistentSelf = false;
-
-                            if (icon == null)
-                            {
-                                var mat = lutSlot.GetComponentOrAttach<VolumeUnlitMaterial>();
-                                icon = lutSlot.GetComponentOrAttach<StaticTexture3D>();
-                                mat.Volume.Target = icon;
-                                icon.URL.Value = config.GetValue(LutURI);
-                                icon.PreferredProfile.Value = null;
-                                icon.PreferredProfile.Value = config.GetValue(HDRLut) ? ColorProfile.Linear : ColorProfile.sRGB;
-                                icon.Uncompressed.Value = true;
-                                icon.DirectLoad.Value = true;
-                                icon.Readable.Value = true;
-                            }
-                            else if (icon != null)
-                            {
-                                icon.PreferredProfile.Value = null;
-                                icon.PreferredProfile.Value = config.GetValue(HDRLut) ? ColorProfile.Linear : ColorProfile.sRGB;
-                                icon.Uncompressed.Value = true;
-                                icon.DirectLoad.Value = true;
-                                icon.Readable.Value = true;
-                            }
-                            else return;
-
-                            using var cts = new CancellationTokenSource();
-                            await Task.Run(() =>
-                            {
-                                var now = DateTime.Now;
-                                do
-                                {
-                                    if (DateTime.Now - now >= TimeSpan.FromSeconds(10))
-                                    {
-                                        Msg("Timeout reached");
-                                        cts.Cancel();
-                                        return;
-                                    }
-                                }
-                                while (icon.RawAsset == null || icon.RawAsset.Format == Elements.Assets.TextureFormat.Unknown);
-                            }, cts.Token);
-
-                            if (cts.IsCancellationRequested) return;
+                            apple.gradingMode.value = GradingMode.External;
+                            apple.externalLut.value = icon.RawAsset.GetUnity();
                         }
-
-                        foreach (var camera in UnityEngine.Object.FindObjectsOfType<UnityEngine.Camera>())
+                        else
                         {
-                            if (camera.gameObject.tag == "MainCamera")
-                            {
-                                Msg($"Running stuff on {camera.name}");
-                                foreach (var pp in camera.GetComponents<PostProcessLayer>())
-                                {
-                                    if (!pp.defaultProfile.TryGetSettings<ColorGrading>(out var apple))
-                                    {
-                                        Msg($"PP Colorgrading not found adding");
-                                        apple = pp.defaultProfile.AddSettings<ColorGrading>();
-                                    }
-
-                                    apple.gradingMode.overrideState = !removing;
-                                    apple.externalLut.overrideState = !removing;
-
-                                    if (!removing)
-                                    {
-                                        apple.gradingMode.value = GradingMode.External;
-                                        apple.externalLut.value = icon.RawAsset.GetUnity();
-                                    }
-                                    else
-                                    {
-                                        apple.gradingMode.value = GradingMode.HighDefinitionRange;
-                                        apple.externalLut.value = null;
-                                    }
-
-                                    Msg(apple.gradingMode.value);
-                                    Msg(apple.gradingMode.overrideState);
-                                    Msg(apple.externalLut.value);
-                                    Msg(apple.externalLut.overrideState);
-                                }
-                            }
+                            apple.gradingMode.value = GradingMode.HighDefinitionRange;
+                            apple.externalLut.value = null;
                         }
+
+                        Msg(apple.gradingMode.value);
+                        Msg(apple.gradingMode.overrideState);
+                        Msg(apple.externalLut.value);
+                        Msg(apple.externalLut.overrideState);
                     }
-                }
+                });
             }
             catch (Exception e)
             {
-                Msg(e);
+                Msg(e);//is this try catch needed? What is throwing errors? - Choco
+                Msg("Exception thrown in UpdateLut");
             }
         }
 
@@ -276,6 +274,7 @@ namespace ThePostProcessor
             catch (Exception e)
             {
                 Msg(e);
+                Msg("Exception thrown in OnChildAdded");
             }
         }
 
@@ -293,6 +292,7 @@ namespace ThePostProcessor
             catch (Exception e)
             {
                 Msg(e);
+                Msg("Exception thrown in OnChildRemove");
             }
         }
     }
