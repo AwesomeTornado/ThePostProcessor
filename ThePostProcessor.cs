@@ -87,7 +87,6 @@ namespace ThePostProcessor
             config = GetConfiguration();
             config.Save(true);
 
-            
             ModConfigurationKey.OnChangedHandler updateEnabled = (enabled) =>
             {
                 var renderValue = ModEnabled ? config.GetValue(renderPath) : RenderingPath.UsePlayerSettings;
@@ -104,7 +103,6 @@ namespace ThePostProcessor
                 QualitySettings.antiAliasing = msaaValue;
                 if (ModEnabled) Msg($"Set MSAA Level {msaaValue}x");
             };
-
             ModConfigurationKey.OnChangedHandler updateRenderPath = (path) =>
             {
                 if (ModEnabled is false) return;
@@ -114,16 +112,12 @@ namespace ThePostProcessor
                     Msg($"Camera: {camera.name}, RenderPath: {camera.renderingPath}");
                 });
             };
-           
-
             ModConfigurationKey.OnChangedHandler updateMsaaValue = (msaaValue) =>
             {
                 if (ModEnabled is false) return;
                 QualitySettings.antiAliasing = (int)msaaValue;
                 Msg($"Set MSAA Level {msaaValue}x");
             };
-            
-
             ModConfigurationKey.OnChangedHandler updateHdrValue = (hdrValue) =>
             {
                 if (ModEnabled is false) return;
@@ -133,14 +127,12 @@ namespace ThePostProcessor
                     Msg($"Camera: {camera.name}, HDR: {camera.allowHDR}");
                 });
             };
-
             ModConfigurationKey.OnChangedHandler updateLutEnabled = (LutEnabled) =>
             {
                 if ((bool)LutEnabled) return;
                 UpdateLut(null, true);
             };
-
-            ModConfigurationKey.OnChangedHandler updateLuts = (input) =>
+            ModConfigurationKey.OnChangedHandler updateLuts = (input) =>//this one is weird and needs to be pressed a bunch to reset.
             {
                 if (config.GetValue(LutEnabled) && config.GetValue(useURLlut))
                 {
@@ -151,9 +143,6 @@ namespace ThePostProcessor
                     UpdateLut(null, true);
                 }
             };
-
-            
-
             ModConfigurationKey.OnChangedHandler updateToolshelf = (toolShelf) =>
             {
                 Slot userRoot = Engine.Current.WorldManager.FocusedWorld.LocalUser.Root?.Slot;
@@ -206,7 +195,8 @@ namespace ThePostProcessor
                 updateMsaaValue.Invoke(config.GetValue(antiAliasing));
                 updateLutEnabled.Invoke(config.GetValue(LutEnabled));
                 updateLuts.Invoke(null);
-                updateToolshelf.Invoke(config.GetValue(toolShelfLut));
+                //toolshelf caused a null reference exception
+                //updateToolshelf.Invoke(config.GetValue(toolShelfLut));
             };
 
         }
