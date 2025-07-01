@@ -9,6 +9,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.PlayerLoop;
 using UnityEngine.Rendering.PostProcessing;
 using UnityFrooxEngineRunner;
 using static UnityFrooxEngineRunner.Helper;
@@ -86,7 +87,8 @@ namespace ThePostProcessor
             config = GetConfiguration();
             config.Save(true);
 
-            ENABLED.OnChanged += (enabled) =>
+            
+            ModConfigurationKey.OnChangedHandler updateEnabled = (enabled) =>
             {
                 var renderValue = ModEnabled ? config.GetValue(renderPath) : RenderingPath.UsePlayerSettings;
                 var msaaValue = ModEnabled ? (int)config.GetValue(antiAliasing) : (int)AntiAliasing.None;
@@ -103,7 +105,7 @@ namespace ThePostProcessor
                 if (ModEnabled) Msg($"Set MSAA Level {msaaValue}x");
             };
 
-            renderPath.OnChanged += (path) =>
+            ModConfigurationKey.OnChangedHandler updateRenderPath = (path) =>
             {
                 if (ModEnabled is false) return;
                 ForAllMainCameras((camera) =>
@@ -112,15 +114,17 @@ namespace ThePostProcessor
                     Msg($"Camera: {camera.name}, RenderPath: {camera.renderingPath}");
                 });
             };
+           
 
-            antiAliasing.OnChanged += (msaaValue) =>
+            ModConfigurationKey.OnChangedHandler updateMsaaValue = (msaaValue) =>
             {
                 if (ModEnabled is false) return;
                 QualitySettings.antiAliasing = (int)msaaValue;
                 Msg($"Set MSAA Level {msaaValue}x");
             };
+            
 
-            hdr.OnChanged += (hdrValue) =>
+            ModConfigurationKey.OnChangedHandler updateHdrValue = (hdrValue) =>
             {
                 if (ModEnabled is false) return;
                 ForAllMainCameras((camera) =>
@@ -130,7 +134,7 @@ namespace ThePostProcessor
                 });
             };
 
-            LutEnabled.OnChanged += (LutEnabled) =>
+            ModConfigurationKey.OnChangedHandler updateLutEnabled = (LutEnabled) =>
             {
                 if ((bool)LutEnabled) return;
                 UpdateLut(null, true);
@@ -148,10 +152,9 @@ namespace ThePostProcessor
                 }
             };
 
-            useURLlut.OnChanged += updateLuts;
-            LutURI.OnChanged += updateLuts;
+            
 
-            toolShelfLut.OnChanged += (toolShelf) =>
+            ModConfigurationKey.OnChangedHandler updateToolshelf = (toolShelf) =>
             {
                 Slot userRoot = Engine.Current.WorldManager.FocusedWorld.LocalUser.Root?.Slot;
                 if (userRoot is null) return;
@@ -185,9 +188,25 @@ namespace ThePostProcessor
                 }
             };
 
-            Engine.Current.OnReady += () =>
+            ENABLED.OnChanged += updateEnabled;
+            hdr.OnChanged += updateHdrValue;
+            renderPath.OnChanged += updateRenderPath;
+            antiAliasing.OnChanged += updateMsaaValue;
+            LutEnabled.OnChanged += updateLutEnabled;
+            useURLlut.OnChanged += updateLuts;
+            LutURI.OnChanged += updateLuts;
+            toolShelfLut.OnChanged += updateToolshelf;
+
+           Engine.Current.OnReady += () =>
             {
                 UpdateLut(null, true);
+                updateEnabled.Invoke(config.GetValue(ENABLED));
+                updateHdrValue.Invoke(config.GetValue(hdr));
+                updateRenderPath.Invoke(config.GetValue(renderPath));
+                updateMsaaValue.Invoke(config.GetValue(antiAliasing));
+                updateLutEnabled.Invoke(config.GetValue(LutEnabled));
+                updateLuts.Invoke(null);
+                updateToolshelf.Invoke(config.GetValue(toolShelfLut));
             };
 
         }
