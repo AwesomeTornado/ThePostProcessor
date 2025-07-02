@@ -2,6 +2,7 @@ using Elements.Core;
 using FrooxEngine;
 using FrooxEngine.CommonAvatar;
 using FrooxEngine.Undo;
+using HarmonyLib;
 using ResoniteModLoader;
 using System;
 using System.Collections.Generic;
@@ -28,7 +29,7 @@ namespace ThePostProcessor
         [AutoRegisterConfigKey]
         private static readonly ModConfigurationKey<dummy> PERMS_DUMMY = new("perms_dummy", "--------------------- Anti-Aliasing ---------------------");
         [AutoRegisterConfigKey]
-        private static ModConfigurationKey<AntiAliasing> antiAliasing = new ModConfigurationKey<AntiAliasing>("MSAA", "MSAA (Multisample Anti-Aliasing) level. Only works with Forward Renderpath. MSAA is very heavy on the GPU/VRAM so you may see a drop in FPS", () => AntiAliasing.None);
+        private static ModConfigurationKey<AntiAliasing> antiAliasing = new ModConfigurationKey<AntiAliasing>("MSAA", "MSAA (Multisample Anti-Aliasing) level. Requires Forward Renderpath. MSAA is heavy on GPU/VRAM so you may see a drop in FPS", () => AntiAliasing.None);
         [AutoRegisterConfigKey]
         private static readonly ModConfigurationKey<dummy> PERMS_DUMMY2 = new("perms_dummy2", "--------------------- Color Grading ---------------------");
         [AutoRegisterConfigKey]
@@ -48,7 +49,7 @@ namespace ThePostProcessor
         [AutoRegisterConfigKey]
         private static ModConfigurationKey<RenderingPath> renderPath = new ModConfigurationKey<RenderingPath>("Camera RenderPath", "Changes The RenderPath that is used for the affected cameras.", () => RenderingPath.UsePlayerSettings);
         [AutoRegisterConfigKey]
-        private static ModConfigurationKey<bool> hdr = new ModConfigurationKey<bool>("Camera HDR (Experimental)", "This changes if the affected cameras internally render in HDR or SDR. disabling this can save a lot on GPU utilization and VRAM, but at the cost of mostly breaking Bloom and can introduce a very small amount of colorbanding depending on lighting.", () => true);
+        private static ModConfigurationKey<bool> hdr = new ModConfigurationKey<bool>("Camera HDR (Experimental)", "Toggles affected cameras between HDR/SDR. disabling this can lower GPU and VRAM usage, but breaks Bloom and can cause colorbanding.", () => true);
         [AutoRegisterConfigKey]
 
         private static ModConfigurationKey<bool> Notes = new ModConfigurationKey<bool>("Notes", "All settings here only apply to the POV (Point Of View) camera not to any other in-game cameras", () => false);
@@ -101,7 +102,7 @@ namespace ThePostProcessor
             }
         }
 
-        private static Uri internalLutUrl = config.GetValue(LutURI);
+        private static Uri internalLutUrl = null;
 
         public override void OnEngineInit()
         {
@@ -204,12 +205,28 @@ namespace ThePostProcessor
                  updateEnabled.Invoke(ModEnabled);
              };
 
+            Harmony harmony = new Harmony("com.Cloud_Jumper.ThePostProcessor");
+            harmony.PatchAll();
+            Msg("ThePostProcessor loaded.");
+        }
+
+        [HarmonyPatchCategory(nameof(InitializeLUTOnUserspaceInit))]
+        [HarmonyPatch(typeof(Userspace), "BootstrapAsync")]
+        private class InitializeLUTOnUserspaceInit
+        {
+            private static void Postfix()
+            {
+                Msg("Initializing LUT settings");
+                internalLutUrl = config.GetValue(LutURI);
+                UpdateLut();
+            }
         }
 
         private static void UpdateLut()
         {
             bool removing = ShouldRemoveLUT;
             Slot userspace = Userspace.UserspaceWorld.RootSlot;
+            if (userspace is null) return;
             //gotta run synchronously because we are adding slots/components.
             userspace.RunSynchronously(() =>
             {
