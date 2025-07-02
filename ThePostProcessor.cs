@@ -4,6 +4,7 @@ using FrooxEngine.CommonAvatar;
 using FrooxEngine.Undo;
 using HarmonyLib;
 using ResoniteModLoader;
+using SkyFrost.Base;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -127,7 +128,7 @@ namespace ThePostProcessor
 
                 UpdateLut();
             };
-            ModConfigurationKey.OnChangedHandler updateRenderPath = (path) =>
+            renderPath.OnChanged += (path) =>
             {
                 if (ModEnabled is false) return;
                 ForAllMainCameras((camera) =>
@@ -136,13 +137,13 @@ namespace ThePostProcessor
                     Msg($"Camera: {camera.name}, RenderPath: {camera.renderingPath}");
                 });
             };
-            ModConfigurationKey.OnChangedHandler updateMsaaValue = (msaaValue) =>
+            antiAliasing.OnChanged += (msaaValue) =>
             {
                 if (ModEnabled is false) return;
                 QualitySettings.antiAliasing = (int)msaaValue;
                 Msg($"Set MSAA Level {msaaValue}x");
             };
-            ModConfigurationKey.OnChangedHandler updateHdrValue = (hdrValue) =>
+            hdr.OnChanged += (hdrValue) =>
             {
                 if (ModEnabled is false) return;
                 ForAllMainCameras((camera) =>
@@ -151,20 +152,25 @@ namespace ThePostProcessor
                     Msg($"Camera: {camera.name}, HDR: {camera.allowHDR}");
                 });
             };
-            ModConfigurationKey.OnChangedHandler updateLutEnabled = (lutEnabled) =>
+            LutEnabled.OnChanged += (lutEnabled) =>
             {
                 UpdateLut();
             };
-            ModConfigurationKey.OnChangedHandler updateLutUrl = (lutUrl) =>
+            LutURI.OnChanged += (lutUrl) =>
             {
                 internalLutUrl = (Uri)lutUrl;
                 UpdateLut();
             };
-            ModConfigurationKey.OnChangedHandler updateOverylayCamera = (EnableOverlayCamera) =>
+            ModConfigurationKey.OnChangedHandler updateOverylayCamera = (EnableOverlayCamera) =>//TODO: Call this when the user changes the respective setting.
             {
-
+                ForOverlayCameras((camera) =>
+                {
+                    //Harmony.HasAnyPatches(harmonyId)
+                    camera.enabled = ((bool)EnableOverlayCamera || false) && !(Userspace.UserspaceWorld.LocalUser.OutputDevice == OutputDevice.VR); //TODO: Replace false with "is 3dDashOnScreen" loaded
+                    Msg("Camera.enabled set to " + camera.enabled);
+                });
             };
-            ModConfigurationKey.OnChangedHandler updateToolshelf = (toolShelf) =>
+            toolShelfLut.OnChanged += (toolShelf) =>
             {
                 Slot userRoot = Engine.Current.WorldManager.FocusedWorld.LocalUser.Root.Slot;
 
@@ -191,14 +197,7 @@ namespace ThePostProcessor
                 }
             };
 
-            //TODO: Nearly all of these functions can be inlined for better readability.
             ENABLED.OnChanged += updateEnabled;
-            hdr.OnChanged += updateHdrValue;
-            renderPath.OnChanged += updateRenderPath;
-            antiAliasing.OnChanged += updateMsaaValue;
-            LutEnabled.OnChanged += updateLutEnabled;
-            LutURI.OnChanged += updateLutUrl;
-            toolShelfLut.OnChanged += updateToolshelf;
 
             Engine.Current.OnReady += () =>
              {
@@ -221,6 +220,8 @@ namespace ThePostProcessor
                 UpdateLut();
             }
         }
+
+
 
         private static void UpdateLut()
         {
@@ -258,7 +259,7 @@ namespace ThePostProcessor
                         {
                             if (!pp.defaultProfile.TryGetSettings<ColorGrading>(out var apple))
                             {
-                                Msg($"PP Colorgrading not found adding");
+                                Msg($"PP Colorgrading not found, adding");
                                 apple = pp.defaultProfile.AddSettings<ColorGrading>();
                             }
 
@@ -267,11 +268,6 @@ namespace ThePostProcessor
 
                             apple.gradingMode.value = removing ? GradingMode.HighDefinitionRange : GradingMode.External;
                             apple.externalLut.value = removing ? null : icon.RawAsset.GetUnity();//Icon is null when removing is True, therefore this conditional may be redundant.
-
-                            Msg("gradingMode.value = " + apple.gradingMode.value);
-                            Msg("gradingMode.overrideState = " + apple.gradingMode.overrideState);
-                            Msg("externalLut.value = " + apple.externalLut.value);
-                            Msg("externalLut.overrideState = " + apple.externalLut.overrideState);
                         }
                     });
                 });
