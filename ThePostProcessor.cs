@@ -28,7 +28,7 @@ namespace ThePostProcessor
         [AutoRegisterConfigKey]
         private static readonly ModConfigurationKey<dummy> PERMS_DUMMY = new("perms_dummy", "--------------------- Anti-Aliasing ---------------------");
         [AutoRegisterConfigKey]
-        private static ModConfigurationKey<AntiAliasing> antiAliasing = new ModConfigurationKey<AntiAliasing>("MSAA", "The Level that MSAA (Multisample Anti-Aliasing) will be applyed at. Also due to how MSAA works it only works with Forward Renderpath. Note that MSAA is very heavy on the GPU/VRAM so you may see a drop in FPS", () => AntiAliasing.None);
+        private static ModConfigurationKey<AntiAliasing> antiAliasing = new ModConfigurationKey<AntiAliasing>("MSAA", "MSAA (Multisample Anti-Aliasing) level. Only works with Forward Renderpath. MSAA is very heavy on the GPU/VRAM so you may see a drop in FPS", () => AntiAliasing.None);
         [AutoRegisterConfigKey]
         private static readonly ModConfigurationKey<dummy> PERMS_DUMMY2 = new("perms_dummy2", "--------------------- Color Grading ---------------------");
         [AutoRegisterConfigKey]
@@ -148,14 +148,7 @@ namespace ThePostProcessor
             ModConfigurationKey.OnChangedHandler updateLuts = (input) =>//this one is weird and needs to be pressed a bunch to reset.
             {
                 if (!config.GetValue(LutEnabled)) return;
-                if (config.GetValue(useURLlut))
-                {
-                    UpdateLut();
-                }
-                else
-                {
-                    UpdateLut(null, true);
-                }
+                UpdateLut(null, !config.GetValue(useURLlut));
             };
             ModConfigurationKey.OnChangedHandler updateOverylayCamera = (EnableOverlayCamera) =>
             {
@@ -202,7 +195,7 @@ namespace ThePostProcessor
             Engine.Current.OnReady += () =>
              {
                  UpdateLut(null, true);
-                 updateEnabled.Invoke(config.GetValue(ENABLED));
+                 updateEnabled.Invoke(ModEnabled);
                  //the functions below are already updated by the enabled handling code.
                  //updateHdrValue.Invoke(config.GetValue(hdr));
                  //updateRenderPath.Invoke(config.GetValue(renderPath));
