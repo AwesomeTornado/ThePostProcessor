@@ -32,13 +32,11 @@ namespace ThePostProcessor
         [AutoRegisterConfigKey]
         private static readonly ModConfigurationKey<dummy> PERMS_DUMMY2 = new("perms_dummy2", "--------------------- Color Grading ---------------------");
         [AutoRegisterConfigKey]
-        private static ModConfigurationKey<bool> useURLlut = new ModConfigurationKey<bool>("Use Color Grading Asset URI", "Uses Color Grading Asset URI as the target for Color Grading", () => false);//funky setting?
-        [AutoRegisterConfigKey]
         private static ModConfigurationKey<Uri> LutURI = new ModConfigurationKey<Uri>("Color Grading Asset URI", "The URI used for loading the Color Grading Asset Asset. typically this is on resdb:///", () => new("resdb:///35c1d6249ee3b063e38c7e3ea4f506fe9bad7265f7505a1f947a80fd9558496a.3dtex")); // local://8mdjnurwnydnshgc44jzas95aukpyqjw3q5wdoxrsi8ys6fw1wzy/UN78XSrG_E6vyhUisVqtrA.3dtex
         [AutoRegisterConfigKey]
         private static ModConfigurationKey<bool> HDRLut = new ModConfigurationKey<bool>("Is Color Grading Asset HDR", "Switch between Linear(HDR)/true and SRGB(SDR)/false", () => true);
         [AutoRegisterConfigKey]
-        private static ModConfigurationKey<bool> toolShelfLut = new ModConfigurationKey<bool>("Allow Color Grading Asset On ToolShelf", "Allows a Color Grading Asset (Note this typically is a imported image as LUT but can be any slot that holds a StaticTexture3D) on your ToolShelves to be used as the target for the Color Grading", () => false);
+        private static ModConfigurationKey<bool> toolShelfLut = new ModConfigurationKey<bool>("Allow Color Grading Asset On ToolShelf", "Search the Toolshelf for LUTs (StaticTexture3Ds) and auto apply them as the Color Grading asset", () => false);
         [AutoRegisterConfigKey]
         private static readonly ModConfigurationKey<dummy> PERMS_DUMMY3 = new("perms_dummy3", "--------------------- Misc ---------------------");
         [AutoRegisterConfigKey]
@@ -95,12 +93,22 @@ namespace ThePostProcessor
             }
         }
 
+        private static bool ShouldRemoveLUT
+        {
+            get
+            {
+                return !ModEnabled || !config.GetValue(LutEnabled);
+            }
+        }
+
+        private static Uri internalLutUrl = config.GetValue(LutURI);
+
         public override void OnEngineInit()
         {
             config = GetConfiguration();
             config.Save(true);
 
-            ModConfigurationKey.OnChangedHandler updateEnabled = (enabled) =>//TODO: Add lut update here
+            ModConfigurationKey.OnChangedHandler updateEnabled = (enabled) =>
             {
                 var renderValue = ModEnabled ? config.GetValue(renderPath) : RenderingPath.UsePlayerSettings;
                 var msaaValue = ModEnabled ? (int)config.GetValue(antiAliasing) : (int)AntiAliasing.None;
@@ -115,6 +123,8 @@ namespace ThePostProcessor
                 });
                 QualitySettings.antiAliasing = msaaValue;
                 if (ModEnabled) Msg($"Set MSAA Level {msaaValue}x");
+
+                UpdateLut();
             };
             ModConfigurationKey.OnChangedHandler updateRenderPath = (path) =>
             {
@@ -140,15 +150,14 @@ namespace ThePostProcessor
                     Msg($"Camera: {camera.name}, HDR: {camera.allowHDR}");
                 });
             };
-            ModConfigurationKey.OnChangedHandler updateLutEnabled = (LutEnabled) =>
+            ModConfigurationKey.OnChangedHandler updateLutEnabled = (lutEnabled) =>
             {
-                if ((bool)LutEnabled) return;
-                UpdateLut(null, true);
+                UpdateLut();
             };
-            ModConfigurationKey.OnChangedHandler updateLuts = (input) =>//this one is weird and needs to be pressed a bunch to reset.
+            ModConfigurationKey.OnChangedHandler updateLutUrl = (lutUrl) =>
             {
-                if (!config.GetValue(LutEnabled)) return;
-                UpdateLut(null, !config.GetValue(useURLlut));
+                internalLutUrl = (Uri)lutUrl;
+                UpdateLut();
             };
             ModConfigurationKey.OnChangedHandler updateOverylayCamera = (EnableOverlayCamera) =>
             {
@@ -156,14 +165,12 @@ namespace ThePostProcessor
             };
             ModConfigurationKey.OnChangedHandler updateToolshelf = (toolShelf) =>
             {
-                Slot userRoot = Engine.Current.WorldManager.FocusedWorld.LocalUser.Root.Slot;//removed nullable, add back in if getting null ref errors.
-                //if (userRoot is null) return;//the above type is not nullable, consider removing the null check.
+                Slot userRoot = Engine.Current.WorldManager.FocusedWorld.LocalUser.Root.Slot;
 
                 List<AvatarRoot> list = Pool.BorrowList<AvatarRoot>();
                 userRoot.GetFirstDirectComponentsInChildren(list);
                 Slot avatarRoot = list.FirstOrDefault().Slot;
                 Pool.Return(ref list);
-
 
                 if ((bool)toolShelf)
                 {
@@ -183,133 +190,93 @@ namespace ThePostProcessor
                 }
             };
 
+            //TODO: Nearly all of these functions can be inlined for better readability.
             ENABLED.OnChanged += updateEnabled;
             hdr.OnChanged += updateHdrValue;
             renderPath.OnChanged += updateRenderPath;
             antiAliasing.OnChanged += updateMsaaValue;
             LutEnabled.OnChanged += updateLutEnabled;
-            useURLlut.OnChanged += updateLuts;//funky setting
-            LutURI.OnChanged += updateLuts;
+            LutURI.OnChanged += updateLutUrl;
             toolShelfLut.OnChanged += updateToolshelf;
 
             Engine.Current.OnReady += () =>
              {
-                 UpdateLut(null, true);
                  updateEnabled.Invoke(ModEnabled);
-                 //the functions below are already updated by the enabled handling code.
-                 //updateHdrValue.Invoke(config.GetValue(hdr));
-                 //updateRenderPath.Invoke(config.GetValue(renderPath));
-                 //updateMsaaValue.Invoke(config.GetValue(antiAliasing));
-                 updateLutEnabled.Invoke(config.GetValue(LutEnabled));
-                 updateLuts.Invoke(null);
-                 //toolshelf caused a null reference exception
-                 //updateToolshelf.Invoke(config.GetValue(toolShelfLut));
              };
 
         }
 
-        private static void UpdateLut(StaticTexture3D icon = null, bool removing = false)
+        private static void UpdateLut()
         {
-            if (config.GetValue(LutEnabled) is not true) return;
-
+            bool removing = ShouldRemoveLUT;
             Slot userspace = Userspace.UserspaceWorld.RootSlot;
-            //if (userspace is null) return;
+            //gotta run synchronously because we are adding slots/components.
             userspace.RunSynchronously(() =>
             {
+                Slot lutSlot;
+                StaticTexture3D icon = null;
                 if (!removing)
                 {
-                    var lutSlot = userspace.FindChildOrAdd("LUTHolder");
+                    lutSlot = userspace.FindChildOrAdd("LUTHolder");
                     lutSlot.PersistentSelf = false;
 
-                    if (icon == null)
-                    {
-                        Msg("Setting var: Mat");
-                        var mat = lutSlot.GetComponentOrAttach<VolumeUnlitMaterial>();
-                        icon = lutSlot.GetComponentOrAttach<StaticTexture3D>();
-                        mat.Volume.Target = icon;
-                        icon.URL.Value = config.GetValue(LutURI);
-                    }
-
-                    icon.PreferredProfile.Value = null;
+                    VolumeUnlitMaterial mat = lutSlot.GetComponentOrAttach<VolumeUnlitMaterial>();
+                    icon = lutSlot.GetComponentOrAttach<StaticTexture3D>();
+                    mat.Volume.Target = icon;
+                    icon.URL.Value = internalLutUrl;
                     icon.PreferredProfile.Value = config.GetValue(HDRLut) ? ColorProfile.Linear : ColorProfile.sRGB;
                     icon.Uncompressed.Value = true;
                     icon.DirectLoad.Value = true;
                     icon.Readable.Value = true;
-
-                    //using var cts = new CancellationTokenSource();
-                    //await Task.Run(() =>
-                    //{
-                    //    var now = DateTime.Now;
-                    //    do
-                    //    {
-                    //        if (DateTime.Now - now >= TimeSpan.FromSeconds(10))
-                    //        {
-                    //            Msg("Timeout reached");
-                    //            cts.Cancel();
-                    //            return;
-                    //        }
-                    //    }
-                    //    while (icon.RawAsset == null || icon.RawAsset.Format == Elements.Assets.TextureFormat.Unknown);
-                    //}, cts.Token);
-
-                    //if (cts.IsCancellationRequested) return;
                 }
-                ForAllMainCameras((camera) =>
+
+                //TODO: This will run in five frames, so that FrooxEngine has the time to upload icon to Unity
+                //This five frame delay can probably be shortened to something like one frame, but it works as is.
+                userspace.RunInUpdates(5, () =>
                 {
-                    Msg($"Running stuff on {camera.name}");
-                    foreach (var pp in camera.GetComponents<PostProcessLayer>())
+                    ForAllMainCameras((camera) =>
                     {
-                        if (!pp.defaultProfile.TryGetSettings<ColorGrading>(out var apple))
+                        Msg($"Running stuff on {camera.name}");
+                        foreach (var pp in camera.GetComponents<PostProcessLayer>())
                         {
-                            Msg($"PP Colorgrading not found adding");
-                            apple = pp.defaultProfile.AddSettings<ColorGrading>();
-                        }
+                            if (!pp.defaultProfile.TryGetSettings<ColorGrading>(out var apple))
+                            {
+                                Msg($"PP Colorgrading not found adding");
+                                apple = pp.defaultProfile.AddSettings<ColorGrading>();
+                            }
 
-                        apple.gradingMode.overrideState = !removing;
-                        apple.externalLut.overrideState = !removing;
+                            apple.gradingMode.overrideState = !removing;
+                            apple.externalLut.overrideState = !removing;
 
-                        if (!removing)//this could be valueconditionals
-                        {
-                            apple.gradingMode.value = GradingMode.External;
-                            apple.externalLut.value = icon.RawAsset.GetUnity();
-                        }
-                        else
-                        {
-                            apple.gradingMode.value = GradingMode.HighDefinitionRange;
-                            apple.externalLut.value = null;
-                        }
+                            apple.gradingMode.value = removing ? GradingMode.HighDefinitionRange : GradingMode.External;
+                            apple.externalLut.value = removing ? null : icon.RawAsset.GetUnity();//Icon is null when removing is True, therefore this conditional may be redundant.
 
-                        Msg(apple.gradingMode.value);
-                        Msg(apple.gradingMode.overrideState);
-                        Msg(apple.externalLut.value);
-                        Msg(apple.externalLut.overrideState);
-                    }
+                            Msg("gradingMode.value = " + apple.gradingMode.value);
+                            Msg("gradingMode.overrideState = " + apple.gradingMode.overrideState);
+                            Msg("externalLut.value = " + apple.externalLut.value);
+                            Msg("externalLut.overrideState = " + apple.externalLut.overrideState);
+                        }
+                    });
                 });
             });
         }
 
         private static void OnChildAdded(Slot slot, Slot child)
         {
-            World w = Userspace.UserspaceWorld;
-            w.RunSynchronously(() =>
-            {
-                var texture3d = child.GetComponentInChildren<StaticTexture3D>();
-                if (texture3d is null) return;
-                Msg($"LUT added from: {child.Name}, on {slot.Name}");
-                UpdateLut(texture3d);
-            });
+            var texture3d = child.GetComponentInChildren<StaticTexture3D>();
+            if (texture3d is null) return; //if we don't find any LUTs, exit.
+            Msg($"LUT added from: {child.Name}, on {slot.Name}");
+            internalLutUrl = texture3d.URL.Value;
+            UpdateLut();
         }
 
         private static void OnChildRemove(Slot slot, Slot child)
         {
-            World w = Userspace.UserspaceWorld;
-            w.RunSynchronously(() =>
-            {
-                var texture3d = child.GetComponentInChildren<StaticTexture3D>();
-                if (texture3d is null) return;
-                Msg($"LUT Removed from: {slot.Name}");
-                UpdateLut(null, true);
-            });
+            var texture3d = child.GetComponentInChildren<StaticTexture3D>();
+            if (texture3d is not null) return; // if we don't find any LUT's, change back to default URL
+            Msg($"LUT Removed from: {slot.Name}");
+            internalLutUrl = config.GetValue(LutURI);
+            UpdateLut();
         }
     }
 }
