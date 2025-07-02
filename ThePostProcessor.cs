@@ -100,7 +100,7 @@ namespace ThePostProcessor
             config = GetConfiguration();
             config.Save(true);
 
-            ModConfigurationKey.OnChangedHandler updateEnabled = (enabled) =>
+            ModConfigurationKey.OnChangedHandler updateEnabled = (enabled) =>//TODO: Add lut update here
             {
                 var renderValue = ModEnabled ? config.GetValue(renderPath) : RenderingPath.UsePlayerSettings;
                 var msaaValue = ModEnabled ? (int)config.GetValue(antiAliasing) : (int)AntiAliasing.None;
@@ -208,94 +208,84 @@ namespace ThePostProcessor
 
         }
 
-        private static async void UpdateLut(StaticTexture3D icon = null, bool removing = false)
+        private static void UpdateLut(StaticTexture3D icon = null, bool removing = false)
         {
-            try
-            {
-                if (config.GetValue(LutEnabled) is not true) return;
+            if (config.GetValue(LutEnabled) is not true) return;
 
-                Slot userspace = Userspace.UserspaceWorld.RootSlot;
-                //if (userspace is null) return; //the above variable is not nullable, consider removing the null check.
-                userspace.RunSynchronously(() =>
+            Slot userspace = Userspace.UserspaceWorld.RootSlot;
+            //if (userspace is null) return;
+            userspace.RunSynchronously(() =>
+            {
+                if (!removing)
                 {
-                    if (!removing)
+                    var lutSlot = userspace.FindChildOrAdd("LUTHolder");
+                    lutSlot.PersistentSelf = false;
+
+                    if (icon == null)
                     {
-                        var lutSlot = userspace.FindChildOrAdd("LUTHolder");
-                        lutSlot.PersistentSelf = false;
-
-                        if (icon == null)
-                        {
-                            Msg("Setting var: Mat");
-                            var mat = lutSlot.GetComponentOrAttach<VolumeUnlitMaterial>();
-                            icon = lutSlot.GetComponentOrAttach<StaticTexture3D>();
-                            mat.Volume.Target = icon;
-                            icon.URL.Value = config.GetValue(LutURI);
-                        }
-
-                        icon.PreferredProfile.Value = null;
-                        icon.PreferredProfile.Value = config.GetValue(HDRLut) ? ColorProfile.Linear : ColorProfile.sRGB;
-                        icon.Uncompressed.Value = true;
-                        icon.DirectLoad.Value = true;
-                        icon.Readable.Value = true;
-
-                        //using var cts = new CancellationTokenSource();
-                        //await Task.Run(() =>
-                        //{
-                        //    var now = DateTime.Now;
-                        //    do
-                        //    {
-                        //        if (DateTime.Now - now >= TimeSpan.FromSeconds(10))
-                        //        {
-                        //            Msg("Timeout reached");
-                        //            cts.Cancel();
-                        //            return;
-                        //        }
-                        //    }
-                        //    while (icon.RawAsset == null || icon.RawAsset.Format == Elements.Assets.TextureFormat.Unknown);
-                        //}, cts.Token);
-
-                        //if (cts.IsCancellationRequested) return;
+                        Msg("Setting var: Mat");
+                        var mat = lutSlot.GetComponentOrAttach<VolumeUnlitMaterial>();
+                        icon = lutSlot.GetComponentOrAttach<StaticTexture3D>();
+                        mat.Volume.Target = icon;
+                        icon.URL.Value = config.GetValue(LutURI);
                     }
-                    ForAllMainCameras((camera) =>
+
+                    icon.PreferredProfile.Value = null;
+                    icon.PreferredProfile.Value = config.GetValue(HDRLut) ? ColorProfile.Linear : ColorProfile.sRGB;
+                    icon.Uncompressed.Value = true;
+                    icon.DirectLoad.Value = true;
+                    icon.Readable.Value = true;
+
+                    //using var cts = new CancellationTokenSource();
+                    //await Task.Run(() =>
+                    //{
+                    //    var now = DateTime.Now;
+                    //    do
+                    //    {
+                    //        if (DateTime.Now - now >= TimeSpan.FromSeconds(10))
+                    //        {
+                    //            Msg("Timeout reached");
+                    //            cts.Cancel();
+                    //            return;
+                    //        }
+                    //    }
+                    //    while (icon.RawAsset == null || icon.RawAsset.Format == Elements.Assets.TextureFormat.Unknown);
+                    //}, cts.Token);
+
+                    //if (cts.IsCancellationRequested) return;
+                }
+                ForAllMainCameras((camera) =>
+                {
+                    Msg($"Running stuff on {camera.name}");
+                    foreach (var pp in camera.GetComponents<PostProcessLayer>())
                     {
-                        Msg($"Running stuff on {camera.name}");
-                        foreach (var pp in camera.GetComponents<PostProcessLayer>())
+                        if (!pp.defaultProfile.TryGetSettings<ColorGrading>(out var apple))
                         {
-                            if (!pp.defaultProfile.TryGetSettings<ColorGrading>(out var apple))
-                            {
-                                Msg($"PP Colorgrading not found adding");
-                                apple = pp.defaultProfile.AddSettings<ColorGrading>();
-                            }
-
-                            apple.gradingMode.overrideState = !removing;
-                            apple.externalLut.overrideState = !removing;
-
-                            if (!removing)//this could be valueconditionals
-                            {
-                                apple.gradingMode.value = GradingMode.External;
-                                apple.externalLut.value = icon.RawAsset.GetUnity();
-                            }
-                            else
-                            {
-                                apple.gradingMode.value = GradingMode.HighDefinitionRange;
-                                apple.externalLut.value = null;
-                            }
-
-                            Msg(apple.gradingMode.value);
-                            Msg(apple.gradingMode.overrideState);
-                            Msg(apple.externalLut.value);
-                            Msg(apple.externalLut.overrideState);
+                            Msg($"PP Colorgrading not found adding");
+                            apple = pp.defaultProfile.AddSettings<ColorGrading>();
                         }
-                    });
+
+                        apple.gradingMode.overrideState = !removing;
+                        apple.externalLut.overrideState = !removing;
+
+                        if (!removing)//this could be valueconditionals
+                        {
+                            apple.gradingMode.value = GradingMode.External;
+                            apple.externalLut.value = icon.RawAsset.GetUnity();
+                        }
+                        else
+                        {
+                            apple.gradingMode.value = GradingMode.HighDefinitionRange;
+                            apple.externalLut.value = null;
+                        }
+
+                        Msg(apple.gradingMode.value);
+                        Msg(apple.gradingMode.overrideState);
+                        Msg(apple.externalLut.value);
+                        Msg(apple.externalLut.overrideState);
+                    }
                 });
-
-
-            }
-            catch (Exception e)
-            {
-                Error(e);//is this try catch needed? What is throwing errors? - Choco
-                Error("Exception thrown in UpdateLut");
-            }
+            });
         }
 
         private static void OnChildAdded(Slot slot, Slot child)
