@@ -34,7 +34,7 @@ namespace ThePostProcessor
         [AutoRegisterConfigKey]
         private static ModConfigurationKey<bool> useURLlut = new ModConfigurationKey<bool>("Use Color Grading Asset URI", "Uses Color Grading Asset URI as the target for Color Grading", () => false);//funky setting?
         [AutoRegisterConfigKey]
-        private static ModConfigurationKey<Uri> LutURI = new ModConfigurationKey<Uri>("Color Grading Asset URI", "The URI used for loading the Color Grading Asset Asset. typically this is on resdb:///", () => new("resdb:///35c1d6249ee3b063e38c7e3ea4f506fe9bad7265f7505a1f947a80fd9558496a.3dtex"));
+        private static ModConfigurationKey<Uri> LutURI = new ModConfigurationKey<Uri>("Color Grading Asset URI", "The URI used for loading the Color Grading Asset Asset. typically this is on resdb:///", () => new("resdb:///35c1d6249ee3b063e38c7e3ea4f506fe9bad7265f7505a1f947a80fd9558496a.3dtex")); // local://8mdjnurwnydnshgc44jzas95aukpyqjw3q5wdoxrsi8ys6fw1wzy/UN78XSrG_E6vyhUisVqtrA.3dtex
         [AutoRegisterConfigKey]
         private static ModConfigurationKey<bool> HDRLut = new ModConfigurationKey<bool>("Is Color Grading Asset HDR", "Switch between Linear(HDR)/true and SRGB(SDR)/false", () => true);
         [AutoRegisterConfigKey]
@@ -210,82 +210,86 @@ namespace ThePostProcessor
 
         private static async void UpdateLut(StaticTexture3D icon = null, bool removing = false)
         {
-            if (config.GetValue(LutEnabled) is not true) return;
-
-            Slot userspace = Userspace.UserspaceWorld.RootSlot;
-            //if (userspace is null) return; //the above variable is not nullable, consider removing the null check.
-
             try
             {
-                if (!removing)
+                if (config.GetValue(LutEnabled) is not true) return;
+
+                Slot userspace = Userspace.UserspaceWorld.RootSlot;
+                //if (userspace is null) return; //the above variable is not nullable, consider removing the null check.
+                userspace.RunSynchronously(() =>
                 {
-                    var lutSlot = userspace.FindChildOrAdd("LUTHolder");
-                    lutSlot.PersistentSelf = false;
-
-                    if (icon == null)
+                    if (!removing)
                     {
-                        Msg("Setting var: Mat");
-                        var mat = lutSlot.GetComponentOrAttach<VolumeUnlitMaterial>();
-                        icon = lutSlot.GetComponentOrAttach<StaticTexture3D>();
-                        mat.Volume.Target = icon;
-                        icon.URL.Value = config.GetValue(LutURI);
-                    }
+                        var lutSlot = userspace.FindChildOrAdd("LUTHolder");
+                        lutSlot.PersistentSelf = false;
 
-                    icon.PreferredProfile.Value = null;
-                    icon.PreferredProfile.Value = config.GetValue(HDRLut) ? ColorProfile.Linear : ColorProfile.sRGB;
-                    icon.Uncompressed.Value = true;
-                    icon.DirectLoad.Value = true;
-                    icon.Readable.Value = true;
-
-                    using var cts = new CancellationTokenSource();
-                    await Task.Run(() =>
-                    {
-                        var now = DateTime.Now;
-                        do
+                        if (icon == null)
                         {
-                            if (DateTime.Now - now >= TimeSpan.FromSeconds(10))
+                            Msg("Setting var: Mat");
+                            var mat = lutSlot.GetComponentOrAttach<VolumeUnlitMaterial>();
+                            icon = lutSlot.GetComponentOrAttach<StaticTexture3D>();
+                            mat.Volume.Target = icon;
+                            icon.URL.Value = config.GetValue(LutURI);
+                        }
+
+                        icon.PreferredProfile.Value = null;
+                        icon.PreferredProfile.Value = config.GetValue(HDRLut) ? ColorProfile.Linear : ColorProfile.sRGB;
+                        icon.Uncompressed.Value = true;
+                        icon.DirectLoad.Value = true;
+                        icon.Readable.Value = true;
+
+                        //using var cts = new CancellationTokenSource();
+                        //await Task.Run(() =>
+                        //{
+                        //    var now = DateTime.Now;
+                        //    do
+                        //    {
+                        //        if (DateTime.Now - now >= TimeSpan.FromSeconds(10))
+                        //        {
+                        //            Msg("Timeout reached");
+                        //            cts.Cancel();
+                        //            return;
+                        //        }
+                        //    }
+                        //    while (icon.RawAsset == null || icon.RawAsset.Format == Elements.Assets.TextureFormat.Unknown);
+                        //}, cts.Token);
+
+                        //if (cts.IsCancellationRequested) return;
+                    }
+                    ForAllMainCameras((camera) =>
+                    {
+                        Msg($"Running stuff on {camera.name}");
+                        foreach (var pp in camera.GetComponents<PostProcessLayer>())
+                        {
+                            if (!pp.defaultProfile.TryGetSettings<ColorGrading>(out var apple))
                             {
-                                Msg("Timeout reached");
-                                cts.Cancel();
-                                return;
+                                Msg($"PP Colorgrading not found adding");
+                                apple = pp.defaultProfile.AddSettings<ColorGrading>();
                             }
-                        }
-                        while (icon.RawAsset == null || icon.RawAsset.Format == Elements.Assets.TextureFormat.Unknown);
-                    }, cts.Token);
 
-                    if (cts.IsCancellationRequested) return;
-                }
-                ForAllMainCameras((camera) =>
-                {
-                    Msg($"Running stuff on {camera.name}");
-                    foreach (var pp in camera.GetComponents<PostProcessLayer>())
-                    {
-                        if (!pp.defaultProfile.TryGetSettings<ColorGrading>(out var apple))
-                        {
-                            Msg($"PP Colorgrading not found adding");
-                            apple = pp.defaultProfile.AddSettings<ColorGrading>();
-                        }
+                            apple.gradingMode.overrideState = !removing;
+                            apple.externalLut.overrideState = !removing;
 
-                        apple.gradingMode.overrideState = !removing;
-                        apple.externalLut.overrideState = !removing;
+                            if (!removing)//this could be valueconditionals
+                            {
+                                apple.gradingMode.value = GradingMode.External;
+                                apple.externalLut.value = icon.RawAsset.GetUnity();
+                            }
+                            else
+                            {
+                                apple.gradingMode.value = GradingMode.HighDefinitionRange;
+                                apple.externalLut.value = null;
+                            }
 
-                        if (!removing)//this could be valueconditionals
-                        {
-                            apple.gradingMode.value = GradingMode.External;
-                            apple.externalLut.value = icon.RawAsset.GetUnity();
+                            Msg(apple.gradingMode.value);
+                            Msg(apple.gradingMode.overrideState);
+                            Msg(apple.externalLut.value);
+                            Msg(apple.externalLut.overrideState);
                         }
-                        else
-                        {
-                            apple.gradingMode.value = GradingMode.HighDefinitionRange;
-                            apple.externalLut.value = null;
-                        }
-
-                        Msg(apple.gradingMode.value);
-                        Msg(apple.gradingMode.overrideState);
-                        Msg(apple.externalLut.value);
-                        Msg(apple.externalLut.overrideState);
-                    }
+                    });
                 });
+
+
             }
             catch (Exception e)
             {
@@ -296,38 +300,26 @@ namespace ThePostProcessor
 
         private static void OnChildAdded(Slot slot, Slot child)
         {
-            try
+            World w = Userspace.UserspaceWorld;
+            w.RunSynchronously(() =>
             {
                 var texture3d = child.GetComponentInChildren<StaticTexture3D>();
-                if (texture3d != null)
-                {
-                    Msg($"LUT added from: {child.Name}, on {slot.Name}");
-                    UpdateLut(texture3d);
-                }
-            }
-            catch (Exception e)
-            {
-                Error(e);
-                Error("Exception thrown in OnChildAdded");
-            }
+                if (texture3d is null) return;
+                Msg($"LUT added from: {child.Name}, on {slot.Name}");
+                UpdateLut(texture3d);
+            });
         }
 
         private static void OnChildRemove(Slot slot, Slot child)
         {
-            try
+            World w = Userspace.UserspaceWorld;
+            w.RunSynchronously(() =>
             {
                 var texture3d = child.GetComponentInChildren<StaticTexture3D>();
-                if (texture3d != null)
-                {
-                    Msg($"LUT Removed from: {slot.Name}");
-                    UpdateLut(null, true);
-                }
-            }
-            catch (Exception e)
-            {
-                Error(e);
-                Error("Exception thrown in OnChildRemove");
-            }
+                if (texture3d is null) return;
+                Msg($"LUT Removed from: {slot.Name}");
+                UpdateLut(null, true);
+            });
         }
     }
 }
