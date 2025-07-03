@@ -57,6 +57,8 @@ namespace ThePostProcessor
 
         private static ModConfiguration config;
 
+        private static UnityEngine.Camera OverlayCamera;
+
         public enum AntiAliasing
         {
             None = 0,
@@ -78,10 +80,16 @@ namespace ThePostProcessor
 
         private static void ForOverlayCameras(Action<UnityEngine.Camera> actions)
         {
+            if (OverlayCamera != null)
+            {
+                actions(OverlayCamera);
+                return;
+            }
             foreach (var camera in UnityEngine.Object.FindObjectsOfType<UnityEngine.Camera>())
             {
                 if (camera.gameObject.name == "OverlayCamera")
                 {
+                    OverlayCamera = camera;
                     actions(camera);
                 }
             }
@@ -163,6 +171,21 @@ namespace ThePostProcessor
             };
             ModConfigurationKey.OnChangedHandler updateOverylayCamera = (EnableOverlayCamera) =>//TODO: Call this when the user changes the respective setting.
             {
+                //TODO: Patch this to handle switching between desktop and VR?
+                //may want to find a singular function that only gets called when VR active and dash opened.
+                /*
+                 * private void InputInterface_VRActiveChanged(bool active)
+		            {
+			            base.RunSynchronously(new Action(this.UpdateOverlayState), false);
+		            }
+
+
+                		protected override void OnAttach()
+		                {
+			            base.InputInterface.VRActiveChanged += this.InputInterface_VRActiveChanged;
+                 */
+                //This event will be reworked to simply invalidate the camera enabled boolean, and then call a seperate function which will handle the 
+                //logic of "should the overlay camera be disabled" and "is the disabled state already set"
                 ForOverlayCameras((camera) =>
                 {
                     //Harmony.HasAnyPatches(harmonyId)
